@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"runtime"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/mediactl/par2go/internal/bindings"
@@ -29,6 +30,10 @@ import (
 
 // jobMu serialises jobs: Process reads process-wide statics.
 var jobMu sync.Mutex
+
+// inFlight counts p2_run calls that have not returned. It is zero whenever
+// Verify or Repair returns or panics: a job is never freed under C.
+var inFlight atomic.Int32
 
 // testHook, when set by a test, is called with true just after jobMu is
 // taken and with false just before it is released.
@@ -85,7 +90,10 @@ func run(ctx context.Context, index string, opts Options, repair bool) (Result, 
 	go func() {
 		runtime.LockOSThread()
 		defer runtime.UnlockOSThread()
-		done <- bindings.Run(job, b2i(repair))
+		inFlight.Add(1)
+		code := bindings.Run(job, b2i(repair))
+		inFlight.Add(-1)
+		done <- code
 	}()
 	code, panicked := wait(ctx, job, done, r.pollEvery, opts.Progress)
 	if panicked != nil {
