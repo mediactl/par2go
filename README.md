@@ -33,3 +33,12 @@ go test -race ./... && CGO_ENABLED=0 go test ./...
 
 Both modes matter: `-race` needs cgo, while production runs
 `CGO_ENABLED=0`, where purego uses its own fakecgo.
+
+## Patches to par2cmdline-turbo
+
+`shim/build.sh` applies `shim/patches/*.patch` on top of the pinned commit:
+
+- `0001-keep-utf8-names.patch`: the nzbgetcom fork converts every stored
+  file name from Latin-1 to UTF-8, so a name already written as UTF-8 (by
+  par2cmdline, ParPar or MultiPar) was encoded twice and its file read as
+  missing. Valid UTF-8 is now kept as is.

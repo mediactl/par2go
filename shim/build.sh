@@ -35,6 +35,14 @@ if [ "${got}" != "${PAR2_COMMIT}" ]; then
   exit 1
 fi
 
+# Start every build from the pinned commit's own files, then apply
+# par2go's patches (shim/patches), so local edits in the clone never
+# reach a build.
+git -C "${src}" checkout -q -- .
+for p in "${here}"/patches/*.patch; do
+  git -C "${src}" apply "${p}"
+done
+
 cmake -S "${here}" -B "${cmakedir}" -DCMAKE_BUILD_TYPE=Release -DPAR2_SRC="${src}"
 cmake --build "${cmakedir}" --target par2go -j "$(nproc)"
 mkdir -p "${out}"

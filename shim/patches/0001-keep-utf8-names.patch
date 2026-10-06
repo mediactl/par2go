@@ -1,0 +1,56 @@
+par2go patch to par2cmdline-turbo v1.5.0-20261005 (GPL-2.0-or-later, as upstream).
+
+The nzbgetcom fork converts every stored file name from Latin-1 to UTF-8,
+so a name already written as UTF-8 (par2cmdline, ParPar, MultiPar) is
+encoded twice: "Amélie" becomes "AmÃ©lie", the file reads as missing, and
+repair writes a second copy under the garbled name. Keep valid UTF-8 as is.
+
+diff --git a/src/utf8.cpp b/src/utf8.cpp
+index db6a563..b6d22af 100644
+--- a/src/utf8.cpp
++++ b/src/utf8.cpp
+@@ -31,9 +31,44 @@
+ 
+ namespace Par2::utf8
+ {
++  // IsValidUtf8 reports whether s is well-formed UTF-8 (no overlongs,
++  // surrogates or code points past U+10FFFF).
++  static bool IsValidUtf8(std::string_view s)
++  {
++    size_t i = 0;
++    while (i < s.size())
++    {
++      unsigned char c = s[i];
++      size_t n;
++      unsigned int cp;
++      if (c < 0x80) { ++i; continue; }
++      else if ((c & 0xe0) == 0xc0) { n = 1; cp = c & 0x1f; }
++      else if ((c & 0xf0) == 0xe0) { n = 2; cp = c & 0x0f; }
++      else if ((c & 0xf8) == 0xf0) { n = 3; cp = c & 0x07; }
++      else return false;
++      if (i + n >= s.size()) return false; // continuation bytes run past the end
++      for (size_t k = 1; k <= n; ++k)
++      {
++        unsigned char cc = s[i + k];
++        if ((cc & 0xc0) != 0x80) return false;
++        cp = (cp << 6) | (cc & 0x3f);
++      }
++      if ((n == 1 && cp < 0x80) || (n == 2 && cp < 0x800) || (n == 3 && cp < 0x10000) ||
++          cp > 0x10ffff || (cp >= 0xd800 && cp <= 0xdfff))
++        return false;
++      i += n + 1;
++    }
++    return true;
++  }
++
++  // Latin1ToUtf8 converts a name stored as Latin-1. A name that is already
++  // valid UTF-8 -- what par2cmdline, ParPar and MultiPar write -- is
++  // returned unchanged; converting it again would turn "é" into "Ã©" and
++  // make the file unfindable. (par2go patch; offered upstream.)
+   std::string Latin1ToUtf8(std::string_view latin1Str)
+   {
+     if (latin1Str.empty()) return "";
++    if (IsValidUtf8(latin1Str)) return std::string(latin1Str);
+ 
+     std::string utf8Str;
+     utf8Str.reserve(latin1Str.length() * 2);

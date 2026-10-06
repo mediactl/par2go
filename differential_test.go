@@ -68,7 +68,7 @@ func TestVerdictsMatchTheCLI(t *testing.T) {
 	}
 	statusOfCode := map[int]Status{0: AllCorrect, 1: RepairPossible, 2: RepairNotPossible}
 	extras := map[string][]string{"renamed": {"z75QO.part070.rar"}, "volnames": {"set.vol-01.par2"}}
-	for _, name := range []string{"intact", "repairable", "unrepairable", "renamed", "volnames"} {
+	for _, name := range []string{"intact", "repairable", "unrepairable", "renamed", "volnames", "unicode"} {
 		t.Run(name, func(t *testing.T) {
 			cliDir, goDir := testlib.CopyCase(t, name), testlib.CopyCase(t, name)
 			code, need := cli(t, "v", cliDir, extras[name])

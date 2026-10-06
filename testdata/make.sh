@@ -20,7 +20,7 @@ td="${root}/testdata"
 gen() { (cd "${root}" && go run ./internal/testgen "$@"); }
 command -v par2 >/dev/null || { echo "make.sh needs par2 on PATH" >&2; exit 1; }
 
-rm -rf "${td}/base" "${td}"/{intact,repairable,unrepairable,renamed,volnames} "${td}/sha256.txt"
+rm -rf "${td}/base" "${td}"/{intact,repairable,unrepairable,renamed,volnames,unicode} "${td}/sha256.txt" "${td}/sha256-unicode.txt"
 mkdir -p "${td}/base"
 gen data -seed 1 -size 8192 -o "${td}/base/a.bin"
 gen data -seed 2 -size 5000 -o "${td}/base/b.bin"
@@ -37,4 +37,12 @@ gen damage -o "${td}/volnames/a.bin" -bs 1024 -first 3 -count 1
 vol="$(cd "${td}/volnames" && ls set.vol*.par2)"
 mv "${td}/volnames/${vol}" "${td}/volnames/set.vol-01.par2"
 rm -rf "${td}/base"
+
+# A set whose file name is UTF-8 with spaces, as usenet releases often are.
+u="Amélie café – 2001.bin"
+mkdir -p "${td}/unicode"
+gen data -seed 3 -size 6144 -o "${td}/unicode/${u}"
+(cd "${td}/unicode" && par2 create -q -q -s1024 -c2 -n1 set.par2 "${u}")
+(cd "${td}/unicode" && sha256sum "${u}") > "${td}/sha256-unicode.txt"
+gen damage -o "${td}/unicode/${u}" -bs 1024 -first 2 -count 1
 ls -R "${td}"
