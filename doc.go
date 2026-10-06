@@ -20,4 +20,11 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 //
 // The library is found through $PAR2GO_LIB (a file path), then as
 // libpar2go.so on the dynamic loader's search path.
+//
+// Each job runs on a thread of the library's own: no Go thread waits in C
+// while it runs, and Go polls it for progress and completion. Jobs run one
+// at a time per process. The library catches every C++ exception on the
+// job's own thread, but par2's worker threads are its own: a crash or an
+// uncaught exception there ends the process, so run untrusted sets in a
+// process you can afford to lose.
 package par2

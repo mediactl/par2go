@@ -48,7 +48,10 @@ type Options struct {
 	// set verifies. Verify ignores it.
 	Purge bool
 	// Progress, if set, is called from the calling goroutine every
-	// PollEvery while the job runs.
+	// PollEvery while the job runs. It must not call Verify or Repair:
+	// jobs run one at a time, so that call would wait for the job that is
+	// calling it, forever. A panic or runtime.Goexit in it cancels the
+	// job and waits for it to stop before propagating.
 	Progress func(Progress)
 	// PollEvery defaults to 250ms.
 	PollEvery time.Duration
