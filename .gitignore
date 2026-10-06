@@ -1,2 +1,4 @@
 /shim/build/
 /shim/out/
+core
+core.*
