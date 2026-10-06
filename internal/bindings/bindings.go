@@ -34,8 +34,17 @@ var ErrUnavailable = errors.New("par2go: libpar2go.so unavailable")
 
 // The shim's functions, registered by Load. They are nil until Load succeeds.
 var (
-	ABIVer func() int32
-	Sizeof func(which int32) uint64
+	ABIVer       func() int32
+	Sizeof       func(which int32) uint64
+	New          func(index, basepath string, memoryLimit int64, threads, fileThreads, purge int32) uintptr
+	AddExtra     func(job uintptr, path string) int32
+	Run          func(job uintptr, repair int32) int32
+	ReadProgress func(job uintptr, out *Progress)
+	Cancel       func(job uintptr)
+	ReadCounts   func(job uintptr, out *Counts) int32
+	ReadFile     func(job uintptr, index int32, out *File) int32
+	ReadLog      func(job uintptr, buf *byte, n uint64) uint64
+	Free         func(job uintptr)
 )
 
 type symbol struct {
@@ -48,6 +57,15 @@ func symbols() []symbol {
 	return []symbol{
 		{"p2_abi_version", &ABIVer},
 		{"p2_sizeof", &Sizeof},
+		{"p2_new", &New},
+		{"p2_add_extra", &AddExtra},
+		{"p2_run", &Run},
+		{"p2_progress_read", &ReadProgress},
+		{"p2_cancel", &Cancel},
+		{"p2_counts_read", &ReadCounts},
+		{"p2_file_read", &ReadFile},
+		{"p2_log_read", &ReadLog},
+		{"p2_free", &Free},
 	}
 }
 
