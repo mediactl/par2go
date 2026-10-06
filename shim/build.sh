@@ -21,6 +21,9 @@ PAR2_COMMIT="4aa390514d0236c00810f2a74f4435b6fff5df37"
 work="${here}/build"
 src="${work}/par2cmdline-turbo"
 out="${OUT_DIR:-${here}/out}"
+# A CMake cache records absolute paths, so the host and the bookworm
+# container (which sees the tree at /src) each need their own.
+cmakedir="${CMAKE_BUILD_DIR:-${work}/cmake}"
 
 if [ ! -d "${src}/.git" ]; then
   git clone --quiet --depth 1 --branch "${PAR2_TAG}" \
@@ -32,8 +35,8 @@ if [ "${got}" != "${PAR2_COMMIT}" ]; then
   exit 1
 fi
 
-cmake -S "${here}" -B "${work}/cmake" -DCMAKE_BUILD_TYPE=Release -DPAR2_SRC="${src}"
-cmake --build "${work}/cmake" --target par2go -j "$(nproc)"
+cmake -S "${here}" -B "${cmakedir}" -DCMAKE_BUILD_TYPE=Release -DPAR2_SRC="${src}"
+cmake --build "${cmakedir}" --target par2go -j "$(nproc)"
 mkdir -p "${out}"
-install -m 0644 "${work}/cmake/libpar2go.so" "${out}/libpar2go.so"
+install -m 0644 "${cmakedir}/libpar2go.so" "${out}/libpar2go.so"
 echo "${out}/libpar2go.so"

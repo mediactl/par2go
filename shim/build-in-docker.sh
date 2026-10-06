@@ -23,6 +23,6 @@ docker run --rm -v "${root}:/src" -w /src debian:bookworm bash -c "
   apt-get update -qq
   apt-get install -y -qq --no-install-recommends cmake g++ git ca-certificates make >/dev/null
   git config --global --add safe.directory '*'  # the checkout is the caller's, not root's
-  OUT_DIR=/src/shim/out shim/build.sh
+  OUT_DIR=/src/shim/out CMAKE_BUILD_DIR=/src/shim/build/cmake-bookworm shim/build.sh
   chown -R $(id -u):$(id -g) /src/shim/build /src/shim/out
 "
