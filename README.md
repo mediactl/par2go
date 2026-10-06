@@ -42,3 +42,8 @@ Both modes matter: `-race` needs cgo, while production runs
   file name from Latin-1 to UTF-8, so a name already written as UTF-8 (by
   par2cmdline, ParPar or MultiPar) was encoded twice and its file read as
   missing. Valid UTF-8 is now kept as is.
+- `0002-scan-progress.patch`: the data scan never advanced the progress
+  meter it was handed (`VerifyDataFile` called the `ScanDataFile` overload
+  that makes a throwaway one), and that meter takes a callback upstream
+  never set, so verification reported no progress. Both are fixed, through
+  a new `SigScanProgress` hook.

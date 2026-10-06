@@ -18,6 +18,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 package par2
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -70,4 +71,28 @@ func TestFreeingARunningJobCancelsAndJoinsIt(t *testing.T) {
 	require.Equal(t, before, testlib.SHA256(t, filepath.Join(dir, "big.bin")))
 	_, err := os.Stat(filepath.Join(dir, "big.bin.1"))
 	require.True(t, os.IsNotExist(err))
+}
+
+// Progress moves through Loading and Verifying, and Verifying reports
+// progress across the data scan rather than sitting at 0 until the end.
+func TestVerifyReportsProgressWhileScanning(t *testing.T) {
+	testlib.RequireLib(t)
+	dir := bigSet(t)
+	var phases []Phase
+	scanning := 0
+	res, err := Verify(context.Background(), index(dir), Options{
+		FileThreads: 1, PollEvery: time.Millisecond,
+		Progress: func(p Progress) {
+			if len(phases) == 0 || phases[len(phases)-1] != p.Phase {
+				phases = append(phases, p.Phase)
+			}
+			if p.Phase == Verifying && p.PerMille > 0 && p.PerMille < 1000 {
+				scanning++
+			}
+		},
+	})
+	require.NoError(t, err, res.Log)
+	require.Equal(t, RepairPossible, res.Status)
+	require.Equal(t, []Phase{Loading, Verifying}, phases)
+	require.Greater(t, scanning, 3, "progress did not move during the data scan")
 }

@@ -1,0 +1,51 @@
+par2go patch to par2cmdline-turbo v1.5.0-20261005 (GPL-2.0-or-later, as upstream).
+
+A library user saw no progress while a large file was verified, for two
+reasons. VerifyDataFile is handed the scan's MTProgressMeter but calls the
+ScanDataFile overload that builds a throwaway dummy_progress meter, so the
+scan never advanced the meter it was given; and that meter takes a
+callback that upstream never sets. Pass the meter through, and add a
+SigScanProgress hook called with whole-scan per mille.
+
+diff --git a/include/par2/par2repairer.h b/include/par2/par2repairer.h
+index 49b1e35..dbf9ffc 100644
+--- a/include/par2/par2repairer.h
++++ b/include/par2/par2repairer.h
+@@ -190,6 +190,9 @@ protected:
+   virtual void SigProgress(int progress) {}
+   virtual void SigHeaders(ParHeaders& headers) {}
+   virtual void SigDone(std::string filename, int available, int total) {}
++  // Whole-scan progress (per mille of every data file) while verifying.
++  // (par2go patch; offered upstream.)
++  virtual void SigScanProgress(int progress) {}
+ 
+   // Repair started
+   virtual void BeginRepair() {}
+diff --git a/src/par2repairer.cpp b/src/par2repairer.cpp
+index ab65f95..27d52e0 100644
+--- a/src/par2repairer.cpp
++++ b/src/par2repairer.cpp
+@@ -1307,6 +1307,7 @@ bool Par2Repairer::VerifySourceFiles(const std::string& basepath, std::vector<st
+ 
+   std::sort(sortedfiles.begin(), sortedfiles.end(), SortSourceFilesByFileName);
+   MTProgressMeter<u64> progress(sout, "Scanning: ", mttotalsize, output_lock);
++  progress.setProgressCallback([this](u32 f) { SigScanProgress((int)f); });
+ 
+   std::mutex dfm_lock, xfiles_lock;
+   
+@@ -1425,6 +1426,7 @@ bool Par2Repairer::VerifyExtraFiles(const std::vector<std::string> &extrafiles,
+       mttotalextrasize += DiskFile::GetFileSize(extrafiles[i]);
+ 
+     MTProgressMeter<u64> progress(sout, "Scanning: ", mttotalextrasize, output_lock);
++    progress.setProgressCallback([this](u32 f) { SigScanProgress((int)f); });
+ 
+     std::mutex dfm_lock;
+     foreach_parallel<std::string>(extrafiles, Par2Repairer::GetFileThreads(), [&, this](const std::string& extrafile) {
+@@ -1489,6 +1491,7 @@ bool Par2Repairer::VerifyDataFile(DiskFile *diskfile, Par2RepairerSourceFile *so
+ 
+     if (!ScanDataFile(diskfile,   // [in]      The file to scan
+                       basepath,
++                      progress,   // [in]      The scan's meter, not a throwaway one
+                       renameonly, // [in]      Only look for perfect matches
+                       sourcefile, // [in/out]  Modified in the match is for another source file
+                       matchtype,  // [out]

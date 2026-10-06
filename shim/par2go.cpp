@@ -245,12 +245,33 @@ public:
   void note(const std::string &s) { buf.append(s); }
 
 protected:
+  // Phases: Loading reads the par2 files (SigProgress is per file),
+  // Verifying scans the data (SigScanProgress, patch 0002, is of the whole
+  // scan; upstream's SigProgress(1000) at each file's end is ignored), and
+  // Repairing rebuilds (SigProgress is of the whole repair).
   void SigFilename(std::string filename) override {
     std::lock_guard<std::mutex> l(mu_);
     file_ = std::move(filename);
-    per_mille_ = 0;
+    if (phase_ == P2_PHASE_LOADING)
+      per_mille_ = 0;
   }
-  void SigProgress(int pm) override { per_mille_ = pm; }
+  void SigProgress(int pm) override {
+    if (phase_ != P2_PHASE_VERIFYING)
+      per_mille_ = pm;
+  }
+  void SigScanProgress(int pm) override {
+    if (phase_ == P2_PHASE_REPAIRING)
+      return;
+    phase_ = P2_PHASE_VERIFYING;
+    per_mille_ = pm;
+  }
+  void SigDone(std::string, int, int) override {
+    // A file finished before the scan meter first reported (small sets).
+    if (phase_ == P2_PHASE_LOADING) {
+      phase_ = P2_PHASE_VERIFYING;
+      per_mille_ = 0;
+    }
+  }
   void BeginRepair() override {
     phase_ = P2_PHASE_REPAIRING;
     per_mille_ = 0;
@@ -349,7 +370,7 @@ private:
   std::thread worker_;
   std::atomic<bool> done_{false};
   std::atomic<int32_t> result_{0};
-  std::atomic<int64_t> phase_{P2_PHASE_VERIFYING};
+  std::atomic<int64_t> phase_{P2_PHASE_LOADING};
   std::atomic<int64_t> per_mille_{0};
   bool repair_attempted_ = false;
 
