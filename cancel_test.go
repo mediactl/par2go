@@ -74,13 +74,13 @@ func TestCancelDuringRepairLeavesNoPartialTarget(t *testing.T) {
 	res, err := Repair(ctx, index(dir), Options{
 		Threads: 1, MemoryLimit: 8 << 20, PollEvery: 5 * time.Millisecond,
 		Progress: func(p Progress) {
-			if p.Phase == Repairing {
+			if p.Phase == Repairing && p.PerMille >= 300 {
 				sawRepair = true
 				cancel()
 			}
 		},
 	})
-	require.True(t, sawRepair, "the repair finished before a poll saw it; make bigSet larger")
+	require.True(t, sawRepair, "the repair finished before a poll saw it 30% through; make bigSet larger")
 	require.ErrorIs(t, err, context.Canceled, res.Log)
 
 	// The damaged original is back under its own name, no backup is left
@@ -98,15 +98,51 @@ func TestCancelDuringRepairLeavesNoPartialTarget(t *testing.T) {
 	require.Equal(t, AllCorrect, res.Status)
 }
 
-// Review Focus 4.
+// deadlineCtx is a context whose deadline the test fires at the moment it
+// chooses, so the expiry lands in the phase under test.
+type deadlineCtx struct {
+	context.Context
+	done chan struct{}
+	once sync.Once
+}
+
+func newDeadlineCtx() *deadlineCtx {
+	return &deadlineCtx{Context: context.Background(), done: make(chan struct{})}
+}
+
+func (c *deadlineCtx) Done() <-chan struct{} { return c.done }
+
+func (c *deadlineCtx) Err() error {
+	select {
+	case <-c.done:
+		return context.DeadlineExceeded
+	default:
+		return nil
+	}
+}
+
+func (c *deadlineCtx) expire() { c.once.Do(func() { close(c.done) }) }
+
+// Review Focus 4: the deadline expires while the data is being scanned.
 func TestADeadlineDuringVerifyChangesNothing(t *testing.T) {
 	testlib.RequireLib(t)
 	dir := bigSet(t)
 	before := testlib.SHA256(t, filepath.Join(dir, "big.bin"))
-	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
-	defer cancel()
-	_, err := Repair(ctx, index(dir), Options{Threads: 1, FileThreads: 1})
+	ctx := newDeadlineCtx()
+	var expired time.Time
+	_, err := Repair(ctx, index(dir), Options{
+		Threads: 1, FileThreads: 1, PollEvery: time.Millisecond,
+		Progress: func(p Progress) {
+			if p.Phase == Verifying && p.PerMille > 0 && expired.IsZero() {
+				expired = time.Now()
+				ctx.expire()
+			}
+		},
+	})
+	require.False(t, expired.IsZero(), "the deadline never fell inside the data scan")
 	require.ErrorIs(t, err, context.DeadlineExceeded)
+	// The scan stops when cancelled, not at the end of the file.
+	require.Less(t, time.Since(expired), 250*time.Millisecond, "the scan ran on after the deadline")
 	require.Equal(t, before, testlib.SHA256(t, filepath.Join(dir, "big.bin")))
 	_, err = os.Stat(filepath.Join(dir, "big.bin.1"))
 	require.True(t, os.IsNotExist(err), "verify must not have started a repair")
