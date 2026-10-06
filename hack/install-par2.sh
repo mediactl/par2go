@@ -13,17 +13,19 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
-# Installs the par2cmdline-turbo release clustarr's media image uses.
+# Installs the par2cmdline-turbo release clustarr's media image uses,
+# checked against the digests recorded here (fetched 2026-10-06).
 set -euo pipefail
-ver="${PAR2_VERSION:-v1.5.0}"
+ver="v1.5.0"
 case "$(uname -m)" in
-  x86_64) arch=amd64 ;;
-  aarch64) arch=arm64 ;;
+  x86_64) arch=amd64 sum=5a9f64386813456693c2ea1fb7649436fe7544bbdf97fd73b3483dfcc8aca464 ;;
+  aarch64) arch=arm64 sum=3afb2f0b319fc4e6353c6d4261994757cbe3189f968a72420b4ba1d63f9c9a70 ;;
   *) echo "unsupported arch $(uname -m)" >&2; exit 1 ;;
 esac
 url="https://github.com/animetosho/par2cmdline-turbo/releases/download/${ver}/par2cmdline-turbo-${ver#v}-linux-${arch}.zip"
 tmp="$(mktemp -d)"
 curl -fsSL -o "${tmp}/par2.zip" "${url}"
+echo "${sum}  ${tmp}/par2.zip" | sha256sum -c - >/dev/null
 unzip -p "${tmp}/par2.zip" par2 > "${tmp}/par2"
 sudo install -m 0755 "${tmp}/par2" /usr/local/bin/par2
 par2 --version | head -1
