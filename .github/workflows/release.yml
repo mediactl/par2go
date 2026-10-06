@@ -1,0 +1,36 @@
+name: release
+on:
+  push:
+    tags: ["v*"]
+permissions:
+  contents: write
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            arch: amd64
+          - runner: ubuntu-24.04-arm
+            arch: arm64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build libpar2go.so in debian:bookworm
+        run: shim/build-in-docker.sh
+      - run: cp shim/out/libpar2go.so libpar2go-linux-${{ matrix.arch }}.so
+      - uses: actions/upload-artifact@v4
+        with:
+          name: libpar2go-linux-${{ matrix.arch }}
+          path: libpar2go-linux-${{ matrix.arch }}.so
+  publish:
+    needs: build
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
+      - run: sha256sum libpar2go-linux-*.so > SHA256SUMS
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "${GITHUB_REF_NAME}" --repo "${GITHUB_REPOSITORY}" --title "${GITHUB_REF_NAME}" --generate-notes libpar2go-linux-*.so SHA256SUMS

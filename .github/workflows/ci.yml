@@ -1,0 +1,32 @@
+name: ci
+on:
+  push:
+    branches: [main]
+  pull_request:
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-24.04, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.runner }}
+    env:
+      PAR2GO_LIB: ${{ github.workspace }}/shim/out/libpar2go.so
+      PAR2GO_REQUIRE: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Build libpar2go.so in debian:bookworm
+        run: shim/build-in-docker.sh
+      - name: Install par2cmdline-turbo
+        run: hack/install-par2.sh
+      - name: Test with cgo and the race detector
+        run: go test -race -count=1 ./...
+      - name: Test without cgo (production)
+        env:
+          CGO_ENABLED: "0"
+        run: go test -count=1 ./...
+      - name: Vet
+        run: go vet ./...
