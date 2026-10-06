@@ -16,6 +16,7 @@ jobs:
     runs-on: ${{ matrix.runner }}
     env:
       PAR2GO_LIB: ${{ github.workspace }}/shim/out/libpar2shim.so
+      PAR2GO_LIBPAR2_DIR: ${{ github.workspace }}/shim/out
       PAR2GO_REQUIRE: "1"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -33,11 +34,16 @@ jobs:
         env:
           CGO_ENABLED: "0"
         run: go test -count=1 ./...
-      - run: cp shim/out/libpar2shim.so libpar2shim-linux-${{ matrix.arch }}.so
+      - name: Name the assets for their architecture
+        run: |
+          cp shim/out/libpar2shim.so libpar2shim-linux-${{ matrix.arch }}.so
+          cp shim/out/libpar2.so libpar2-linux-${{ matrix.arch }}.so
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: libpar2shim-linux-${{ matrix.arch }}
-          path: libpar2shim-linux-${{ matrix.arch }}.so
+          name: release-linux-${{ matrix.arch }}
+          path: |
+            libpar2shim-linux-${{ matrix.arch }}.so
+            libpar2-linux-${{ matrix.arch }}.so
           if-no-files-found: error
   publish:
     needs: build
@@ -48,7 +54,7 @@ jobs:
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           merge-multiple: true
-      - run: sha256sum libpar2shim-linux-*.so > SHA256SUMS
+      - run: sha256sum libpar2shim-linux-*.so libpar2-linux-*.so > SHA256SUMS
       - env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "${GITHUB_REF_NAME}" --repo "${GITHUB_REPOSITORY}" --title "${GITHUB_REF_NAME}" --generate-notes libpar2shim-linux-*.so SHA256SUMS
+        run: gh release create "${GITHUB_REF_NAME}" --repo "${GITHUB_REPOSITORY}" --title "${GITHUB_REF_NAME}" --generate-notes libpar2shim-linux-*.so libpar2-linux-*.so SHA256SUMS

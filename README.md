@@ -16,10 +16,28 @@ to each release; `shim/build.sh` builds one locally.
 
 Licence: GPL-3.0-or-later (par2cmdline-turbo is GPL-2.0-or-later).
 
+## Release assets
+
+Each release attaches, per architecture (`amd64`, `arm64`), built in
+`debian:bookworm` and tested before upload:
+
+- `libpar2shim-linux-<arch>.so`: what par2go loads. Self-contained: par2
+  and libstdc++ are linked in, and only glibc is a dependency.
+- `libpar2-linux-<arch>.so`: the patched par2cmdline-turbo as a shared C++
+  library (`libpar2.so`). It links libstdc++ dynamically, since its API
+  passes std types. No headers are published: a C++ program compiles
+  against par2cmdline-turbo's own headers at the same commit with
+  `shim/patches` applied, and with the flags `shim/build.sh` records in
+  `shim/out/libpar2-dev/par2-flags.txt` (the classes' layout depends on
+  them; the library has no RTTI).
+
+`SHA256SUMS` covers every asset. Debian's unrelated `libpar2` package (from
+par2cmdline 0.4) installs `libpar2.so.1`; this one's soname is `libpar2.so`.
+
 ## Building the library
 
 ```sh
-shim/build.sh              # host toolchain → shim/out/libpar2shim.so
+shim/build.sh              # host toolchain → shim/out/{libpar2shim.so,libpar2.so,libpar2-dev/}
 shim/build-in-docker.sh    # debian:bookworm, as releases are built
 ```
 
@@ -27,7 +45,7 @@ shim/build-in-docker.sh    # debian:bookworm, as releases are built
 other. Tests skip without the library unless `PAR2GO_REQUIRE=1`:
 
 ```sh
-export PAR2GO_LIB=$PWD/shim/out/libpar2shim.so PAR2GO_REQUIRE=1
+export PAR2GO_LIB=$PWD/shim/out/libpar2shim.so PAR2GO_LIBPAR2_DIR=$PWD/shim/out PAR2GO_REQUIRE=1
 go test -race ./... && CGO_ENABLED=0 go test ./...
 ```
 
@@ -47,3 +65,6 @@ Both modes matter: `-race` needs cgo, while production runs
   that makes a throwaway one), and that meter takes a callback upstream
   never set, so verification reported no progress. Both are fixed, through
   a new `SigScanProgress` hook.
+- `0003-standalone-headers.patch`: `libpar2.h` included `<string.h>`,
+  `<inttypes.h>` and `config.h` inside `namespace Par2`, so a program that
+  included a par2 header first failed to compile. They now come first.

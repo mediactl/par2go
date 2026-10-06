@@ -44,7 +44,16 @@ for p in "${here}"/patches/*.patch; do
 done
 
 cmake -S "${here}" -B "${cmakedir}" -DCMAKE_BUILD_TYPE=Release -DPAR2_SRC="${src}"
-cmake --build "${cmakedir}" --target par2shim -j "$(nproc)"
+cmake --build "${cmakedir}" --target par2shim par2 -j "$(nproc)"
 mkdir -p "${out}"
 install -m 0644 "${cmakedir}/libpar2shim.so" "${out}/libpar2shim.so"
-echo "${out}/libpar2shim.so"
+install -m 0644 "${cmakedir}/libpar2.so" "${out}/libpar2.so"
+
+# libpar2-dev: the patched headers, config.h and the flags libpar2.so was
+# built with, for the C++ test that builds against it. Not published: a
+# release carries only the .so files.
+rm -rf "${out}/libpar2-dev"
+mkdir -p "${out}/libpar2-dev/include"
+cp -r "${src}/include/par2" "${out}/libpar2-dev/include/"
+cp "${cmakedir}/par2-build/config.h" "${cmakedir}/par2-flags.txt" "${out}/libpar2-dev/"
+echo "${out}/libpar2shim.so ${out}/libpar2.so"
