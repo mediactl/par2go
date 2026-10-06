@@ -19,9 +19,14 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 package testlib
 
 import (
+	"bufio"
+	"crypto/sha256"
+	"encoding/hex"
+	"io"
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 
 	"github.com/mediactl/par2go/internal/bindings"
@@ -43,4 +48,62 @@ func RequireLib(t testing.TB) {
 func Root() string {
 	_, file, _, _ := runtime.Caller(0)
 	return filepath.Join(filepath.Dir(file), "..", "..")
+}
+
+// CopyCase copies testdata/<name> into a fresh temp dir and returns it.
+// Repairs write to the set, so a test never works on the committed copy.
+func CopyCase(t testing.TB, name string) string {
+	t.Helper()
+	src := filepath.Join(Root(), "testdata", name)
+	dst := filepath.Join(t.TempDir(), name)
+	if err := os.MkdirAll(dst, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	entries, err := os.ReadDir(src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range entries {
+		b, err := os.ReadFile(filepath.Join(src, e.Name()))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dst, e.Name()), b, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return dst
+}
+
+// Originals maps each data file to the sha256 of its undamaged bytes.
+func Originals(t testing.TB) map[string]string {
+	t.Helper()
+	f, err := os.Open(filepath.Join(Root(), "testdata", "sha256.txt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	m := map[string]string{}
+	s := bufio.NewScanner(f)
+	for s.Scan() {
+		if fields := strings.Fields(s.Text()); len(fields) == 2 {
+			m[fields[1]] = fields[0]
+		}
+	}
+	return m
+}
+
+// SHA256 is the hex sha256 of the file at path.
+func SHA256(t testing.TB, path string) string {
+	t.Helper()
+	f, err := os.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		t.Fatal(err)
+	}
+	return hex.EncodeToString(h.Sum(nil))
 }
