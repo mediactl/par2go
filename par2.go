@@ -32,7 +32,7 @@ import (
 var jobMu sync.Mutex
 
 // inFlight counts p2_run calls that have not returned. It is zero whenever
-// Verify or Repair returns or panics: a job is never freed under C.
+// Verify or Repair returns, panics or Goexits: a job is never freed under C.
 var inFlight atomic.Int32
 
 // testHook, when set by a test, is called with true just after jobMu is
@@ -78,10 +78,9 @@ func run(ctx context.Context, index string, opts Options, repair bool) (Result, 
 	if job == 0 {
 		return Result{}, fmt.Errorf("%w: p2_new failed", ErrMemory)
 	}
-	// Free only after p2_run has returned: wait guarantees it, panics included.
-	defer bindings.Free(job)
 	for _, e := range r.extras {
 		if bindings.AddExtra(job, e) != 0 {
+			bindings.Free(job)
 			return Result{}, fmt.Errorf("%w: p2_add_extra failed", ErrMemory)
 		}
 	}
@@ -95,41 +94,40 @@ func run(ctx context.Context, index string, opts Options, repair bool) (Result, 
 		inFlight.Add(-1)
 		done <- code
 	}()
-	code, panicked := wait(ctx, job, done, r.pollEvery, opts.Progress)
-	if panicked != nil {
-		panic(panicked) // after the deferred Free and Unlock
-	}
+	// However this function is left -- a return, a panic in Progress, or a
+	// runtime.Goexit there (t.FailNow) -- the job is freed only after
+	// p2_run has returned. The deferred Unlock runs after this.
+	finished := false
+	defer func() {
+		if !finished {
+			bindings.Cancel(job)
+			<-done
+		}
+		bindings.Free(job)
+	}()
+	code := wait(ctx, job, done, r.pollEvery, opts.Progress)
+	finished = true
 	return finish(ctx, job, code)
 }
 
-// wait returns only once p2_run has returned.
-func wait(ctx context.Context, job uintptr, done <-chan int32, every time.Duration, progress func(Progress)) (int32, any) {
+// wait returns p2_run's result once it has returned. A panic or Goexit in
+// progress leaves it early; run's deferred guard then cancels and waits.
+func wait(ctx context.Context, job uintptr, done <-chan int32, every time.Duration, progress func(Progress)) int32 {
 	tick := time.NewTicker(every)
 	defer tick.Stop()
 	for {
 		select {
 		case <-tick.C:
-			if progress == nil {
-				continue
-			}
-			if p := callProgress(progress, readProgress(job)); p != nil {
-				bindings.Cancel(job)
-				<-done
-				return bindings.Cancelled, p
+			if progress != nil {
+				progress(readProgress(job))
 			}
 		case <-ctx.Done():
 			bindings.Cancel(job)
-			return <-done, nil
+			return <-done
 		case code := <-done:
-			return code, nil
+			return code
 		}
 	}
-}
-
-func callProgress(f func(Progress), p Progress) (panicked any) {
-	defer func() { panicked = recover() }()
-	f(p)
-	return nil
 }
 
 func readProgress(job uintptr) Progress {

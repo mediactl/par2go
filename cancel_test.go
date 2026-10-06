@@ -23,6 +23,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -212,4 +213,26 @@ func TestAContextCancelledWhileWaitingForTheLockNeverRuns(t *testing.T) {
 	// it got the lock and still never ran, so a.bin is still damaged.
 	require.True(t, entered, "it took the lock")
 	require.NotEqual(t, testlib.Originals(t)["a.bin"], testlib.SHA256(t, filepath.Join(dir, "a.bin")))
+}
+
+// A Progress callback that ends its goroutine without panicking (as
+// t.FailNow and require.* do, through runtime.Goexit) must still leave
+// the job cancelled and finished before it is freed.
+func TestAProgressCallbackThatExitsTheGoroutineReleasesTheJob(t *testing.T) {
+	testlib.RequireLib(t)
+	dir := testlib.CopyCase(t, "repairable")
+	exited := make(chan struct{})
+	go func() {
+		defer close(exited)
+		_, _ = Repair(context.Background(), index(dir), Options{
+			PollEvery: time.Microsecond,
+			Progress:  func(Progress) { runtime.Goexit() },
+		})
+	}()
+	<-exited
+	require.Zero(t, inFlight.Load(), "Repair's goroutine exited while p2_run was still running")
+	dir2 := testlib.CopyCase(t, "repairable")
+	res, err := Repair(context.Background(), index(dir2), Options{})
+	require.NoError(t, err)
+	require.Equal(t, Repaired, res.Status)
 }
