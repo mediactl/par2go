@@ -19,7 +19,9 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 // guards have already seen them (upstream's own files get this from their
 // precompiled header, libpar2internal.h).
 #include <inttypes.h>
+#include <stdio.h>
 #include <string.h>
+#include <unistd.h>
 
 #include <atomic>
 #include <cstring>
@@ -130,10 +132,15 @@ public:
       return P2_CANCELLED;
     if (repair && r == Par2::eRepairPossible) {
       repair_attempted_ = true;
+      std::vector<std::pair<Par2::DiskFile *, std::string>> damaged = damagedTargets();
       // Same object: Process skips loading and verifying (upstream fact 2).
       r = Process(mem, base_, static_cast<Par2::u32>(threads_),
                   static_cast<Par2::u32>(fthreads_), index_, extras_,
                   /*dorepair=*/true, /*purgefiles=*/purge_, false, false, 0);
+      // A repair that finished stands, even if a cancel arrived after it.
+      if (r == Par2::eSuccess)
+        return P2_SUCCESS;
+      restoreOriginals(damaged);
       if (cancel_requested_)
         return P2_CANCELLED;
     }
@@ -190,6 +197,35 @@ protected:
   }
 
 private:
+  // damagedTargets lists the files repair will move aside, exactly as
+  // RenameTargetFiles chooses them: present, but not a complete version.
+  std::vector<std::pair<Par2::DiskFile *, std::string>> damagedTargets() {
+    std::vector<std::pair<Par2::DiskFile *, std::string>> out;
+    Par2::u32 n = 0;
+    for (Par2::Par2RepairerSourceFile *sf : sourcefiles) {
+      if (n++ >= mainpacket->TotalFileCount())
+        break;
+      if (sf != nullptr && sf->GetTargetExists() && sf->GetTargetFile() != sf->GetCompleteFile())
+        out.emplace_back(sf->GetTargetFile(), sf->GetTargetFile()->FileName());
+    }
+    return out;
+  }
+
+  // restoreOriginals undoes RenameTargetFiles after a repair that did not
+  // finish. Upstream moves each damaged file to <name>.1 before rebuilding
+  // and, on cancel or error, deletes only the partial rebuild, so the set
+  // would be left with no file under the name it lists -- and a later
+  // Repair that is not handed the backup as an extra file finds too few
+  // blocks. Put each original back wherever its name is free again.
+  void restoreOriginals(const std::vector<std::pair<Par2::DiskFile *, std::string>> &damaged) {
+    for (const auto &[df, original] : damaged) {
+      const std::string now = df->FileName();
+      if (now != original && ::access(original.c_str(), F_OK) != 0 &&
+          ::access(now.c_str(), F_OK) == 0 && ::rename(now.c_str(), original.c_str()) == 0)
+        note("par2go: restored " + original + " after the repair stopped\n");
+    }
+  }
+
   // snapshot records what verification found (upstream facts 4 and 5).
   void snapshot() {
     std::lock_guard<std::mutex> l(mu_);

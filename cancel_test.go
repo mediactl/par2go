@@ -82,22 +82,19 @@ func TestCancelDuringRepairLeavesNoPartialTarget(t *testing.T) {
 	require.True(t, sawRepair, "the repair finished before a poll saw it; make bigSet larger")
 	require.ErrorIs(t, err, context.Canceled, res.Log)
 
-	// Either the target is absent (upstream deleted the partial rebuild and
-	// the damaged original sits in big.bin.1) or it is intact; never partial.
-	if _, err := os.Stat(filepath.Join(dir, "big.bin")); err == nil {
-		res, err := Verify(context.Background(), index(dir), Options{})
-		require.NoError(t, err)
-		require.NotEqual(t, AllCorrect, res.Status, "a cancelled repair must not leave a verified target")
-	}
-
-	entries, _ := os.ReadDir(dir)
-	var extras []string
-	for _, e := range entries {
-		extras = append(extras, filepath.Join(dir, e.Name()))
-	}
-	res, err = Repair(context.Background(), index(dir), Options{ExtraFiles: extras})
+	// The damaged original is back under its own name, no backup is left
+	// beside it, and the set is exactly as repairable as before: a plain
+	// Repair, with no extra files, finishes the job.
+	_, err = os.Stat(filepath.Join(dir, "big.bin"))
+	require.NoError(t, err, "the cancelled repair left no big.bin")
+	_, err = os.Stat(filepath.Join(dir, "big.bin.1"))
+	require.True(t, os.IsNotExist(err), "the damaged original was left as big.bin.1")
+	res, err = Repair(context.Background(), index(dir), Options{})
 	require.NoError(t, err, res.Log)
 	require.Equal(t, Repaired, res.Status, res.Log)
+	res, err = Verify(context.Background(), index(dir), Options{})
+	require.NoError(t, err)
+	require.Equal(t, AllCorrect, res.Status)
 }
 
 // Review Focus 4.
