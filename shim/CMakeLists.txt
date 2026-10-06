@@ -12,7 +12,7 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
-cmake_minimum_required(VERSION 3.24)  # $<LINK_LIBRARY:WHOLE_ARCHIVE>
+cmake_minimum_required(VERSION 3.13)
 project(par2shim LANGUAGES C CXX)
 
 if(NOT PAR2_SRC)
@@ -51,26 +51,3 @@ target_link_options(par2shim PRIVATE
 # Relink when the version script changes; CMake cannot see it otherwise.
 set_target_properties(par2shim PROPERTIES OUTPUT_NAME par2shim
   LINK_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/par2shim.map)
-
-# libpar2.so: the patched par2-turbo as a shared C++ library, published for
-# C++ users. Its API passes std types (std::ostream&, std::string), so it
-# shares libstdc++ with its user and links it dynamically -- unlike
-# libpar2shim.so, which bundles its own because its interface is C.
-add_library(par2 SHARED par2so.cpp)
-target_link_libraries(par2 PRIVATE "$<LINK_LIBRARY:WHOLE_ARCHIVE,par2-turbo>")
-target_link_options(par2 PRIVATE -Wl,--no-undefined)
-
-# par2-flags.txt: what a user must compile with for par2's classes to have
-# the layout libpar2.so was built with -- upstream's definitions, and
-# -fno-rtti (no typeinfo is emitted for Par2Repairer).
-set(P2_FLAGS "")
-foreach(d IN LISTS P2_DEFS)
-  string(APPEND P2_FLAGS "-D${d}\n")
-endforeach()
-foreach(o IN LISTS P2_OPTS)
-  if(o MATCHES "-fno-rtti")
-    string(APPEND P2_FLAGS "-fno-rtti\n")
-  endif()
-endforeach()
-file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/par2-flags.txt "${P2_FLAGS}")
-
