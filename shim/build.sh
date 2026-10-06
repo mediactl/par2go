@@ -13,7 +13,7 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
-# Builds shim/out/libpar2go.so against par2cmdline-turbo at the pinned commit.
+# Builds shim/out/libpar2shim.so against par2cmdline-turbo at the pinned commit.
 set -euo pipefail
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PAR2_TAG="v1.5.0-20261005"
@@ -44,7 +44,7 @@ for p in "${here}"/patches/*.patch; do
 done
 
 cmake -S "${here}" -B "${cmakedir}" -DCMAKE_BUILD_TYPE=Release -DPAR2_SRC="${src}"
-cmake --build "${cmakedir}" --target par2go -j "$(nproc)"
+cmake --build "${cmakedir}" --target par2shim -j "$(nproc)"
 mkdir -p "${out}"
-install -m 0644 "${cmakedir}/libpar2go.so" "${out}/libpar2go.so"
-echo "${out}/libpar2go.so"
+install -m 0644 "${cmakedir}/libpar2shim.so" "${out}/libpar2shim.so"
+echo "${out}/libpar2shim.so"

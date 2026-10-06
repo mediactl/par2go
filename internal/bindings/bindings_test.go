@@ -32,8 +32,8 @@ func TestCandidatesTryTheEnvironmentFirst(t *testing.T) {
 	env := func(v string) func(string) string {
 		return func(string) string { return v }
 	}
-	require.Equal(t, []string{"/x/libpar2go.so", "libpar2go.so"}, bindings.Candidates(env("/x/libpar2go.so")))
-	require.Equal(t, []string{"libpar2go.so"}, bindings.Candidates(env("")))
+	require.Equal(t, []string{"/x/libpar2shim.so", "libpar2shim.so"}, bindings.Candidates(env("/x/libpar2shim.so")))
+	require.Equal(t, []string{"libpar2shim.so"}, bindings.Candidates(env("")))
 }
 
 func TestTheLibraryLoadsWithAMatchingABI(t *testing.T) {

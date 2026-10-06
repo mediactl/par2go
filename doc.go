@@ -16,10 +16,10 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
 // Package par2 verifies and repairs PAR2 sets through par2cmdline-turbo's
-// library, loaded at run time from libpar2go.so with purego: no cgo.
+// library, loaded at run time from libpar2shim.so with purego: no cgo.
 //
 // The library is found through $PAR2GO_LIB (a file path), then as
-// libpar2go.so on the dynamic loader's search path.
+// libpar2shim.so on the dynamic loader's search path.
 //
 // Each job runs on a thread of the library's own: no Go thread waits in C
 // while it runs, and Go polls it for progress and completion. Jobs run one

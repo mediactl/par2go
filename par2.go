@@ -37,7 +37,7 @@ const doneEvery = 5 * time.Millisecond
 // taken and with false just before it is released.
 var testHook func(entered bool)
 
-// Available loads libpar2go.so once and reports whether it can be used.
+// Available loads libpar2shim.so once and reports whether it can be used.
 func Available() error { return bindings.Load() }
 
 // Verify checks the set named by index without changing anything.

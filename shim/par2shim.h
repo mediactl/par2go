@@ -14,8 +14,8 @@ GNU General Public License for more details.
 You should have received a copy of the GNU General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
-#ifndef PAR2GO_H
-#define PAR2GO_H
+#ifndef PAR2SHIM_H
+#define PAR2SHIM_H
 
 #include <stddef.h>
 #include <stdint.h>

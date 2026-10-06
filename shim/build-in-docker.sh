@@ -13,7 +13,7 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
-# Builds libpar2go.so inside debian:bookworm (glibc 2.36, clustarr's media
+# Builds libpar2shim.so inside debian:bookworm (glibc 2.36, clustarr's media
 # image base) so it runs there and on any newer glibc. The image is pinned
 # by digest and apt reads snapshot.debian.org at a fixed date, so the same
 # commit builds with the same compiler every time.

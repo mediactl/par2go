@@ -28,9 +28,9 @@ import (
 	"github.com/ebitengine/purego"
 )
 
-// ErrUnavailable reports that libpar2go.so could not be loaded or is not
+// ErrUnavailable reports that libpar2shim.so could not be loaded or is not
 // the version this module was built against.
-var ErrUnavailable = errors.New("par2go: libpar2go.so unavailable")
+var ErrUnavailable = errors.New("par2go: libpar2shim.so unavailable")
 
 // The shim's functions, registered by Load. They are nil until Load succeeds.
 var (
@@ -84,7 +84,7 @@ func Candidates(getenv func(string) string) []string {
 	if p := getenv("PAR2GO_LIB"); p != "" {
 		c = append(c, p)
 	}
-	return append(c, "libpar2go.so")
+	return append(c, "libpar2shim.so")
 }
 
 // Load loads the library once; every later call returns the first result.
@@ -154,7 +154,7 @@ func mappedPath() string {
 		return ""
 	}
 	for _, line := range strings.Split(string(b), "\n") {
-		if i := strings.Index(line, "/"); i >= 0 && strings.Contains(line[i:], "libpar2go") {
+		if i := strings.Index(line, "/"); i >= 0 && strings.Contains(line[i:], "libpar2shim") {
 			return strings.TrimSpace(line[i:])
 		}
 	}

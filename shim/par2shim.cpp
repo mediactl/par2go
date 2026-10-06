@@ -36,7 +36,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include <utility>
 #include <vector>
 
-#include "par2go.h"
+#include "par2shim.h"
 
 #include <par2/libpar2.h>
 #include <par2/par2repairer.h>

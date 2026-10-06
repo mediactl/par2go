@@ -32,7 +32,7 @@ import (
 	"github.com/mediactl/par2go/internal/bindings"
 )
 
-// RequireLib skips t when libpar2go.so cannot be loaded, unless
+// RequireLib skips t when libpar2shim.so cannot be loaded, unless
 // PAR2GO_REQUIRE=1, which turns the skip into a failure (CI sets it).
 func RequireLib(t testing.TB) {
 	t.Helper()
@@ -40,7 +40,7 @@ func RequireLib(t testing.TB) {
 		if os.Getenv("PAR2GO_REQUIRE") == "1" {
 			t.Fatalf("PAR2GO_REQUIRE=1 but the library did not load: %v", err)
 		}
-		t.Skipf("libpar2go.so unavailable (set PAR2GO_LIB): %v", err)
+		t.Skipf("libpar2shim.so unavailable (set PAR2GO_LIB): %v", err)
 	}
 }
 

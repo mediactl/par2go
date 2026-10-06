@@ -13,7 +13,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 cmake_minimum_required(VERSION 3.13)
-project(par2go LANGUAGES C CXX)
+project(par2shim LANGUAGES C CXX)
 
 if(NOT PAR2_SRC)
   message(FATAL_ERROR "PAR2_SRC must name a par2cmdline-turbo checkout (shim/build.sh sets it)")
@@ -37,17 +37,17 @@ add_subdirectory(${PAR2_SRC} par2-build EXCLUDE_FROM_ALL)
 get_directory_property(P2_DEFS DIRECTORY ${PAR2_SRC} COMPILE_DEFINITIONS)
 get_directory_property(P2_OPTS DIRECTORY ${PAR2_SRC} COMPILE_OPTIONS)
 
-add_library(par2go SHARED par2go.cpp)
-target_compile_definitions(par2go PRIVATE ${P2_DEFS})
-target_compile_options(par2go PRIVATE ${P2_OPTS} -fvisibility=hidden -fvisibility-inlines-hidden)
-target_include_directories(par2go PRIVATE
+add_library(par2shim SHARED par2shim.cpp)
+target_compile_definitions(par2shim PRIVATE ${P2_DEFS})
+target_compile_options(par2shim PRIVATE ${P2_OPTS} -fvisibility=hidden -fvisibility-inlines-hidden)
+target_include_directories(par2shim PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR}
   ${CMAKE_CURRENT_BINARY_DIR}/par2-build)   # config.h
-target_link_libraries(par2go PRIVATE par2-turbo)
-target_link_options(par2go PRIVATE
+target_link_libraries(par2shim PRIVATE par2-turbo)
+target_link_options(par2shim PRIVATE
   -static-libstdc++ -static-libgcc
   -Wl,--no-undefined
-  -Wl,--version-script=${CMAKE_CURRENT_SOURCE_DIR}/par2go.map)
+  -Wl,--version-script=${CMAKE_CURRENT_SOURCE_DIR}/par2shim.map)
 # Relink when the version script changes; CMake cannot see it otherwise.
-set_target_properties(par2go PROPERTIES OUTPUT_NAME par2go
-  LINK_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/par2go.map)
+set_target_properties(par2shim PROPERTIES OUTPUT_NAME par2shim
+  LINK_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/par2shim.map)
