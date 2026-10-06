@@ -20,9 +20,7 @@ package par2
 import (
 	"context"
 	"fmt"
-	"runtime"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/mediactl/par2go/internal/bindings"
@@ -31,9 +29,9 @@ import (
 // jobMu serialises jobs: Process reads process-wide statics.
 var jobMu sync.Mutex
 
-// inFlight counts p2_run calls that have not returned. It is zero whenever
-// Verify or Repair returns, panics or Goexits: a job is never freed under C.
-var inFlight atomic.Int32
+// doneEvery is how often a running job is checked for completion: a
+// load of one atomic in the shim, so cheap enough to keep latency low.
+const doneEvery = 5 * time.Millisecond
 
 // testHook, when set by a test, is called with true just after jobMu is
 // taken and with false just before it is released.
@@ -85,54 +83,47 @@ func run(ctx context.Context, index string, opts Options, repair bool) (Result, 
 		}
 	}
 
-	done := make(chan int32, 1)
-	go func() {
-		runtime.LockOSThread()
-		defer runtime.UnlockOSThread()
-		inFlight.Add(1)
-		code := bindings.Run(job, b2i(repair))
-		inFlight.Add(-1)
-		done <- code
-	}()
-	// However this function is left -- a return, a panic in Progress, or a
-	// runtime.Goexit there (t.FailNow) -- the job is freed only after
-	// p2_run has returned. The deferred Unlock runs after this.
-	finished := false
-	defer func() {
-		if !finished {
-			bindings.Cancel(job)
-			<-done
-		}
+	// The job runs on the shim's own thread; no Go thread waits in C for
+	// it. p2_free cancels and joins a job still running, so freeing is
+	// safe however this function is left -- a return, a panic in
+	// Progress, or a runtime.Goexit there (t.FailNow). The deferred
+	// Unlock runs after it.
+	if code := bindings.Start(job, b2i(repair)); code != 0 {
 		bindings.Free(job)
-	}()
-	code := wait(ctx, job, done, r.pollEvery, opts.Progress)
-	finished = true
+		return Result{}, fmt.Errorf("%w: p2_start returned %d", ErrLogic, code)
+	}
+	defer bindings.Free(job)
+	code := wait(ctx, job, r.pollEvery, opts.Progress)
 	return finish(ctx, job, code)
 }
 
-// wait returns p2_run's result once it has returned. A panic or Goexit in
-// progress leaves it early; run's deferred guard then cancels and waits.
-func wait(ctx context.Context, job uintptr, done <-chan int32, every time.Duration, progress func(Progress)) int32 {
-	tick := time.NewTicker(every)
+// wait polls job until its thread has finished and returns the result,
+// calling progress every `every` and cancelling the job once ctx is done.
+func wait(ctx context.Context, job uintptr, every time.Duration, progress func(Progress)) int32 {
+	tick := time.NewTicker(doneEvery)
 	defer tick.Stop()
+	ctxDone := ctx.Done()
+	next := time.Now()
 	for {
+		var p bindings.Progress
+		bindings.ReadProgress(job, &p)
+		if p.Done != 0 {
+			return int32(p.Result)
+		}
+		if progress != nil && !time.Now().Before(next) {
+			progress(toProgress(p))
+			next = time.Now().Add(every)
+		}
 		select {
-		case <-tick.C:
-			if progress != nil {
-				progress(readProgress(job))
-			}
-		case <-ctx.Done():
+		case <-ctxDone:
 			bindings.Cancel(job)
-			return <-done
-		case code := <-done:
-			return code
+			ctxDone = nil // keep polling until the job has stopped
+		case <-tick.C:
 		}
 	}
 }
 
-func readProgress(job uintptr) Progress {
-	var p bindings.Progress
-	bindings.ReadProgress(job, &p)
+func toProgress(p bindings.Progress) Progress {
 	return Progress{Phase: Phase(p.Phase), File: bindings.CString(p.File[:]), PerMille: int(p.PerMille)}
 }
 

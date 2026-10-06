@@ -38,7 +38,8 @@ var (
 	Sizeof       func(which int32) uint64
 	New          func(index, basepath string, memoryLimit int64, threads, fileThreads, purge int32) uintptr
 	AddExtra     func(job uintptr, path string) int32
-	Run          func(job uintptr, repair int32) int32
+	Start        func(job uintptr, repair int32) int32
+	ActiveJobs   func() int32
 	ReadProgress func(job uintptr, out *Progress)
 	Cancel       func(job uintptr)
 	ReadCounts   func(job uintptr, out *Counts) int32
@@ -59,7 +60,8 @@ func symbols() []symbol {
 		{"p2_sizeof", &Sizeof},
 		{"p2_new", &New},
 		{"p2_add_extra", &AddExtra},
-		{"p2_run", &Run},
+		{"p2_start", &Start},
+		{"p2_active_jobs", &ActiveJobs},
 		{"p2_progress_read", &ReadProgress},
 		{"p2_cancel", &Cancel},
 		{"p2_counts_read", &ReadCounts},

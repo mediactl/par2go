@@ -61,17 +61,31 @@ const (
 	Missing
 )
 
-// Phase is the stage a running job is in. Verifying includes loading the
-// par2 files.
+// Phase is the stage a running job is in.
 type Phase int
 
 const (
-	Verifying Phase = iota + 1
+	// Loading reads the par2 files; PerMille is of the current one.
+	Loading Phase = iota + 1
+	// Verifying scans the data files; PerMille is of all of them.
+	Verifying
+	// Repairing rebuilds missing blocks; PerMille is of the whole repair.
 	Repairing
 )
 
-// Progress is one poll of a running job. PerMille is of the current file
-// while verifying and of the whole repair while repairing.
+func (p Phase) String() string {
+	switch p {
+	case Loading:
+		return "Loading"
+	case Verifying:
+		return "Verifying"
+	case Repairing:
+		return "Repairing"
+	}
+	return "Unknown"
+}
+
+// Progress is one poll of a running job.
 type Progress struct {
 	Phase    Phase
 	File     string

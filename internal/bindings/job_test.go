@@ -22,6 +22,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -49,7 +50,7 @@ func runRaw(t *testing.T, dir string, repair bool, extras ...string) raw {
 		r = 1
 	}
 	var out raw
-	out.code = bindings.Run(job, int32(r))
+	out.code = runJob(t, job, int32(r))
 	require.Zero(t, bindings.ReadCounts(job, &out.counts))
 	for i := int32(0); i < int32(out.counts.Files); i++ {
 		var f bindings.File
@@ -112,5 +113,16 @@ func TestShimCancelledBeforeRunReturnsCancelled(t *testing.T) {
 	require.NotZero(t, job)
 	defer bindings.Free(job)
 	bindings.Cancel(job)
-	require.EqualValues(t, bindings.Cancelled, bindings.Run(job, 1))
+	require.EqualValues(t, bindings.Cancelled, runJob(t, job, 1))
+}
+
+// runJob starts job and polls until its thread has finished.
+func runJob(t *testing.T, job uintptr, repair int32) int32 {
+	t.Helper()
+	require.Zero(t, bindings.Start(job, repair))
+	var p bindings.Progress
+	for bindings.ReadProgress(job, &p); p.Done == 0; bindings.ReadProgress(job, &p) {
+		time.Sleep(time.Millisecond)
+	}
+	return int32(p.Result)
 }

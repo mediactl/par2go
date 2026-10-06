@@ -31,6 +31,8 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include <ostream>
 #include <streambuf>
 #include <string>
+#include <system_error>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -42,6 +44,11 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 namespace {
 
 constexpr size_t kLogCap = 4096;
+
+// Par2Repairer::Process reads process-wide statics (filethreads), so jobs
+// run one at a time whoever starts them.
+std::mutex g_process_mu;
+std::atomic<int32_t> g_active{0};
 
 // TailBuf keeps the last kLogCap bytes of par2's output, with each \r
 // rewinding to the start of its line as a terminal would, so progress
@@ -149,10 +156,48 @@ public:
 
   void cancel() {
     cancel_requested_ = true;
-    cancelled = true; // upstream's plain bool, polled by its loops
+    // Upstream's plain bool, polled by its worker loops: store it
+    // atomically so this cross-thread write is not a torn one.
+    __atomic_store_n(&cancelled, true, __ATOMIC_RELEASE);
+  }
+
+  // start runs the job on its own thread; done_ and result_ report it.
+  int32_t start(bool repair) {
+    std::lock_guard<std::mutex> l(start_mu_);
+    if (started_)
+      return P2_INVALID;
+    started_ = true;
+    g_active.fetch_add(1);
+    try {
+      worker_ = std::thread([this, repair] {
+        int32_t r;
+        {
+          std::lock_guard<std::mutex> g(g_process_mu);
+          r = runGuarded(repair);
+        }
+        result_.store(r);
+        g_active.fetch_sub(1);
+        done_.store(true, std::memory_order_release);
+      });
+    } catch (const std::system_error &e) {
+      g_active.fetch_sub(1);
+      note(std::string("\npar2go: cannot start a thread: ") + e.what() + "\n");
+      result_.store(P2_LOGIC_ERROR);
+      done_.store(true, std::memory_order_release);
+    }
+    return 0;
+  }
+
+  // ~Job stops and joins a running job before any member goes away.
+  ~Job() override {
+    cancel();
+    if (worker_.joinable())
+      worker_.join();
   }
 
   void progress(p2_progress *out) {
+    out->done = done_.load(std::memory_order_acquire) ? 1 : 0;
+    out->result = out->done ? result_.load() : 0;
     out->phase = phase_.load();
     out->per_mille = per_mille_.load();
     std::lock_guard<std::mutex> l(mu_);
@@ -177,6 +222,23 @@ public:
     out->blocks_total = f.total;
     copyName(f.name, out->name, sizeof out->name, &out->name_truncated);
     return 0;
+  }
+
+  // runGuarded is run() with every exception caught: none may escape a
+  // thread (std::terminate) or cross into Go.
+  int32_t runGuarded(bool repair) {
+    try {
+      return run(repair);
+    } catch (const std::bad_alloc &) {
+      note("\npar2go: out of memory\n");
+      return P2_MEMORY_ERROR;
+    } catch (const std::exception &e) {
+      note(std::string("\npar2go: exception: ") + e.what() + "\n");
+      return P2_LOGIC_ERROR;
+    } catch (...) {
+      note("\npar2go: unknown exception\n");
+      return P2_LOGIC_ERROR;
+    }
   }
 
   std::string log() { return buf.str(); }
@@ -282,6 +344,11 @@ private:
   std::vector<std::string> extras_;
 
   std::atomic<bool> cancel_requested_{false};
+  std::mutex start_mu_;
+  bool started_ = false;
+  std::thread worker_;
+  std::atomic<bool> done_{false};
+  std::atomic<int32_t> result_{0};
   std::atomic<int64_t> phase_{P2_PHASE_VERIFYING};
   std::atomic<int64_t> per_mille_{0};
   bool repair_attempted_ = false;
@@ -337,26 +404,27 @@ int32_t p2_add_extra(p2_job *j, const char *path) {
   }
 }
 
-int32_t p2_run(p2_job *j, int32_t repair) {
+int32_t p2_start(p2_job *j, int32_t repair) {
   if (j == nullptr)
     return P2_INVALID;
   try {
-    return j->job.run(repair != 0);
-  } catch (const std::bad_alloc &) {
-    j->job.note("\npar2go: out of memory\n");
-    return P2_MEMORY_ERROR;
-  } catch (const std::exception &e) {
-    j->job.note(std::string("\npar2go: exception: ") + e.what() + "\n");
-    return P2_LOGIC_ERROR;
+    return j->job.start(repair != 0);
   } catch (...) {
-    j->job.note("\npar2go: unknown exception\n");
     return P2_LOGIC_ERROR;
   }
 }
 
+int32_t p2_active_jobs(void) { return g_active.load(); }
+
 void p2_progress_read(p2_job *j, p2_progress *out) {
-  if (j != nullptr && out != nullptr)
+  if (j == nullptr || out == nullptr)
+    return;
+  try {
     j->job.progress(out);
+  } catch (...) {
+    // A lock that cannot be taken (std::system_error) or a name copy
+    // that fails leaves the previous reading; never throw into Go.
+  }
 }
 
 void p2_cancel(p2_job *j) {
@@ -365,24 +433,45 @@ void p2_cancel(p2_job *j) {
 }
 
 int32_t p2_counts_read(p2_job *j, p2_counts *out) {
-  return j != nullptr && out != nullptr ? j->job.counts(out) : -1;
+  if (j == nullptr || out == nullptr)
+    return -1;
+  try {
+    return j->job.counts(out);
+  } catch (...) {
+    return -1;
+  }
 }
 
 int32_t p2_file_read(p2_job *j, int32_t i, p2_file_result *out) {
-  return j != nullptr && out != nullptr ? j->job.file(i, out) : -1;
+  if (j == nullptr || out == nullptr)
+    return -1;
+  try {
+    return j->job.file(i, out);
+  } catch (...) {
+    return -1;
+  }
 }
 
 uint64_t p2_log_read(p2_job *j, char *buf, uint64_t n) {
   if (j == nullptr)
     return 0;
-  std::string s = j->job.log();
-  if (buf != nullptr && n > 0) {
-    size_t c = s.size() < n ? s.size() : static_cast<size_t>(n);
-    std::memcpy(buf, s.data(), c);
+  try {
+    std::string s = j->job.log();
+    if (buf != nullptr && n > 0) {
+      size_t c = s.size() < n ? s.size() : static_cast<size_t>(n);
+      std::memcpy(buf, s.data(), c);
+    }
+    return s.size();
+  } catch (...) {
+    return 0;
   }
-  return s.size();
 }
 
-void p2_free(p2_job *j) { delete j; }
+void p2_free(p2_job *j) {
+  try {
+    delete j; // ~Job cancels and joins a running job first
+  } catch (...) {
+  }
+}
 
 } // extern "C"

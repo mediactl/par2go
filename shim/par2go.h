@@ -26,10 +26,10 @@ extern "C" {
 
 #define P2_EXPORT __attribute__((visibility("default")))
 
-#define P2_ABI_VERSION 1
+#define P2_ABI_VERSION 2
 #define P2_NAME_MAX 4096
 
-/* p2_run's return: 0-8 are par2cmdline-turbo's Par2::Result. */
+/* Result codes: 0-8 are par2cmdline-turbo's Par2::Result. */
 enum {
   P2_SUCCESS = 0,
   P2_REPAIR_POSSIBLE = 1,
@@ -44,12 +44,14 @@ enum {
   P2_INVALID = 101
 };
 
-enum { P2_PHASE_VERIFYING = 1, P2_PHASE_REPAIRING = 2 };
+enum { P2_PHASE_LOADING = 1, P2_PHASE_VERIFYING = 2, P2_PHASE_REPAIRING = 3 };
 enum { P2_FILE_COMPLETE = 1, P2_FILE_RENAMED = 2, P2_FILE_DAMAGED = 3, P2_FILE_MISSING = 4 };
 enum { P2_SIZEOF_PROGRESS = 1, P2_SIZEOF_COUNTS = 2, P2_SIZEOF_FILE = 3 };
 
 /* Every field is 8 bytes wide or a byte array last, so Go mirrors it exactly. */
 typedef struct {
+  int64_t done;   /* 1 once the job's thread has finished */
+  int64_t result; /* p2 result code, valid once done */
   int64_t phase;
   int64_t per_mille;
   int64_t file_truncated;
@@ -89,12 +91,19 @@ P2_EXPORT uint64_t p2_sizeof(int32_t which);
 P2_EXPORT p2_job *p2_new(const char *index, const char *basepath, int64_t memory_limit,
                          int32_t threads, int32_t file_threads, int32_t purge);
 P2_EXPORT int32_t p2_add_extra(p2_job *job, const char *path);
-P2_EXPORT int32_t p2_run(p2_job *job, int32_t repair);
+/* p2_start runs the job on a thread the shim owns and returns at once: 0,
+ * or P2_INVALID if the job was already started. Jobs run one at a time;
+ * p2_progress_read reports done and the result. */
+P2_EXPORT int32_t p2_start(p2_job *job, int32_t repair);
+/* p2_active_jobs counts started jobs whose thread has not finished. */
+P2_EXPORT int32_t p2_active_jobs(void);
 P2_EXPORT void p2_progress_read(p2_job *job, p2_progress *out);
 P2_EXPORT void p2_cancel(p2_job *job);
 P2_EXPORT int32_t p2_counts_read(p2_job *job, p2_counts *out);
 P2_EXPORT int32_t p2_file_read(p2_job *job, int32_t index, p2_file_result *out);
 P2_EXPORT uint64_t p2_log_read(p2_job *job, char *buf, uint64_t n);
+/* p2_free cancels a running job, joins its thread, then frees it: safe at
+ * any time. It blocks until the job has stopped. */
 P2_EXPORT void p2_free(p2_job *job);
 
 #ifdef __cplusplus

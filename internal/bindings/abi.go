@@ -18,12 +18,12 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 package bindings
 
 // ABIVersion must equal the shim's P2_ABI_VERSION.
-const ABIVersion = 1
+const ABIVersion = 2
 
 // NameMax is P2_NAME_MAX.
 const NameMax = 4096
 
-// p2_run results; 0-8 are par2cmdline-turbo's Par2::Result.
+// Job results; 0-8 are par2cmdline-turbo's Par2::Result.
 const (
 	Success                  = 0
 	RepairPossible           = 1
@@ -39,8 +39,9 @@ const (
 )
 
 const (
-	PhaseVerifying = 1
-	PhaseRepairing = 2
+	PhaseLoading   = 1
+	PhaseVerifying = 2
+	PhaseRepairing = 3
 )
 
 const (
@@ -58,6 +59,8 @@ const (
 
 // Progress mirrors p2_progress.
 type Progress struct {
+	Done          int64
+	Result        int64
 	Phase         int64
 	PerMille      int64
 	FileTruncated int64

@@ -31,6 +31,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/mediactl/par2go/internal/bindings"
 	"github.com/mediactl/par2go/internal/testlib"
 )
 
@@ -122,7 +123,7 @@ func TestAPanickingProgressCallbackReleasesTheJob(t *testing.T) {
 		})
 	})
 	// p2_run had returned before the job was freed and the panic resumed.
-	require.Zero(t, inFlight.Load(), "Repair panicked while p2_run was still running")
+	require.Zero(t, bindings.ActiveJobs(), "Repair panicked while the job was still running")
 	// The mutex was released and the job freed: the next run works.
 	dir2 := testlib.CopyCase(t, "repairable")
 	res, err := Repair(context.Background(), index(dir2), Options{})
@@ -227,7 +228,7 @@ func TestAProgressCallbackThatExitsTheGoroutineReleasesTheJob(t *testing.T) {
 		})
 	}()
 	<-exited
-	require.Zero(t, inFlight.Load(), "Repair's goroutine exited while p2_run was still running")
+	require.Zero(t, bindings.ActiveJobs(), "Repair's goroutine exited while the job was still running")
 	dir2 := testlib.CopyCase(t, "repairable")
 	res, err := Repair(context.Background(), index(dir2), Options{})
 	require.NoError(t, err)
