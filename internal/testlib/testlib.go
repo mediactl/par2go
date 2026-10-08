@@ -50,6 +50,15 @@ func Root() string {
 	return filepath.Join(filepath.Dir(file), "..", "..")
 }
 
+// caseNames maps a committed testdata file name to the name CopyCase gives
+// it. The unicode case's data file must be named "Amélie café – 2001.bin"
+// to match its par2 set, but the Go module zip refuses a path element with an
+// en dash (golang.org/x/mod/zip), which made v0.1.0 unfetchable as a module.
+// So the file is committed under an ASCII name and renamed in the copy.
+var caseNames = map[string]map[string]string{
+	"unicode": {"unicode-name.bin": "Amélie café – 2001.bin"},
+}
+
 // CopyCase copies testdata/<name> into a fresh temp dir and returns it.
 // Repairs write to the set, so a test never works on the committed copy.
 func CopyCase(t testing.TB, name string) string {
@@ -68,7 +77,11 @@ func CopyCase(t testing.TB, name string) string {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if err := os.WriteFile(filepath.Join(dst, e.Name()), b, 0o644); err != nil {
+		out := e.Name()
+		if renamed, ok := caseNames[name][out]; ok {
+			out = renamed
+		}
+		if err := os.WriteFile(filepath.Join(dst, out), b, 0o644); err != nil {
 			t.Fatal(err)
 		}
 	}
