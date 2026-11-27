@@ -1,0 +1,164 @@
+par2go patch to par2cmdline-turbo v1.5.0-20261005 (GPL-2.0-or-later, as upstream).
+
+Scanning a file for a set's blocks, a block that matches only entries
+already found gives no entry, and the scan moves one byte on (ScanDataFile:
+"if (duplicate && false) // ignore duplicates"). Inside a run of one byte
+longer than a block -- the megabytes of zeros a Matroska muxer reserves at
+a file's start -- the block one byte on is the same bytes: its checksum
+matches the same entries, the whole block is hashed again to learn that
+they are the same, and so at every offset of the run. A 7 GB file with a
+2.66 MiB run of zeros, scanned against a set of 1 MiB blocks that holds a
+block of zeros, cost 1.7 million MD5s of 1 MiB: half an hour on one core,
+with no read. par2cmdline 2.0.0 does the same.
+
+Keep the length of the run of one byte the window ends with as the window
+moves (one compare a step, a look back along the block after a jump), and
+when a lookup of a block that is one byte repeated gives no entry, take
+the block one byte on for the same for as long as that byte keeps coming,
+without looking it up. An entry that has been found stays found, so the
+answer is the one the lookup would give. A short block at the end of a
+file, a lookup made expecting an entry, and a skip ahead (-S) all end the
+run.
+
+diff --git a/include/par2/filechecksummer.h b/include/par2/filechecksummer.h
+index e68717e..fa99518 100644
+--- a/include/par2/filechecksummer.h
++++ b/include/par2/filechecksummer.h
+@@ -71,6 +71,12 @@ public:
+   bool ShortBlock(void) const;
+   u64 BlockLength(void) const;
+ 
++  // The last byte of the block in the window, and how many bytes at the
++  // block's end are that byte: the block's length when it is one byte
++  // repeated. (par2go patch; offered upstream.)
++  char WindowLastByte(void) const;
++  u64 WindowTailRun(void) const;
++
+   // Return the current file offset
+   u64 Offset(void) const;
+ 
+@@ -126,6 +132,29 @@ private:
+   FileCheckSummer& operator=(const FileCheckSummer &);
+ };
+ 
++// The last byte of the block in the window
++
++inline char FileCheckSummer::WindowLastByte(void) const
++{
++  return outpointer[blocksize - 1];
++}
++
++// How many bytes at the end of the block in the window are its last byte
++
++inline u64 FileCheckSummer::WindowTailRun(void) const
++{
++  // One byte repeated: each byte is the one before it
++  if (blocksize < 2 || 0 == memcmp(outpointer, outpointer + 1, (size_t)blocksize - 1))
++    return blocksize;
++
++  const char *last = &outpointer[blocksize - 1];
++  const char *p = last;
++  while (p > outpointer && p[-1] == *last)
++    --p;
++
++  return (u64)(last - p) + 1;
++}
++
+ // Return the current checksum
+ 
+ inline u32 FileCheckSummer::Checksum(void) const
+diff --git a/src/par2repairer.cpp b/src/par2repairer.cpp
+index 27d52e0..2555101 100644
+--- a/src/par2repairer.cpp
++++ b/src/par2repairer.cpp
+@@ -1749,6 +1749,15 @@ bool Par2Repairer::ScanDataFile(DiskFile                *diskfile,    // [in]
+   u64 oldoffset = 0;
+   u64 printprogress = 0;
+ 
++  // How many bytes at the end of the block in the window are its last
++  // byte, kept as the window moves; and whether the scan stands on a block
++  // of one byte repeated for which the lookup found no entry. The block one
++  // byte on is then the same bytes, for as long as that byte keeps coming,
++  // and has no entry either. (par2go patch; offered upstream.)
++  u64 tailrun = filechecksummer.WindowTailRun();
++  char tailbyte = filechecksummer.WindowLastByte();
++  bool emptyrun = false;
++
+   if (noiselevel > nlQuiet)
+   {
+     std::lock_guard<std::mutex> lock(output_lock);
+@@ -1773,10 +1782,30 @@ bool Par2Repairer::ScanDataFile(DiskFile                *diskfile,    // [in]
+ 
+     // If we fail to find a match, it might be because it was a duplicate of a block
+     // that we have already found.
+-    bool duplicate;
++    bool duplicate = false;
+ 
+     // Look for a match
+-    const VerificationHashEntry *currententry = verificationhashtable.FindMatch(nextentry, sourcefile, filechecksummer, duplicate);
++    const VerificationHashEntry *currententry = 0;
++    if (emptyrun && tailrun >= blocksize && !filechecksummer.ShortBlock())
++    {
++      // The same block as at the offset before, which had no entry to
++      // give: every entry it matches has been found, and a found entry
++      // stays found, so this one has none either. Looking it up would
++      // hash the whole block again, at every offset of the run: the
++      // megabytes of zeros a file reserves at its start cost a block's
++      // MD5 a byte, half an hour a file.
++    }
++    else
++    {
++      // A run is taken up only from a lookup that expected no entry, the
++      // way every lookup after it would be made.
++      bool expected = nextentry != 0;
++      currententry = verificationhashtable.FindMatch(nextentry, sourcefile, filechecksummer, duplicate);
++      emptyrun = currententry == 0
++                 && !expected
++                 && tailrun >= blocksize
++                 && !filechecksummer.ShortBlock();
++    }
+ 
+     // Did we find a match
+     if (currententry != 0)
+@@ -1847,6 +1876,9 @@ bool Par2Repairer::ScanDataFile(DiskFile                *diskfile,    // [in]
+       if (!filechecksummer.Jump(currententry->GetDataBlock()->GetLength()))
+         return false;
+ 
++      tailrun = filechecksummer.WindowTailRun();
++      tailbyte = filechecksummer.WindowLastByte();
++
+       // If the next match fails, assume we hare half way through scanning for the next block
+       scanoffset = scandistance >> 1;
+ 
+@@ -1884,6 +1916,19 @@ bool Par2Repairer::ScanDataFile(DiskFile                *diskfile,    // [in]
+         if (!filechecksummer.Step())
+           return false;
+ 
++        // The window took one byte in: the run at its end goes on, or
++        // starts again
++        if (filechecksummer.WindowLastByte() == tailbyte)
++        {
++          if (tailrun < blocksize)
++            tailrun++;
++        }
++        else
++        {
++          tailbyte = filechecksummer.WindowLastByte();
++          tailrun = 1;
++        }
++
+         u64 skipfrom = filechecksummer.Offset();
+ 
+         // Have we scanned too far without finding a block?
+@@ -1895,6 +1940,11 @@ bool Par2Repairer::ScanDataFile(DiskFile                *diskfile,    // [in]
+           if (!filechecksummer.Jump(scanskip))
+             return false;
+ 
++          // The window is no longer the one a byte on
++          tailrun = filechecksummer.WindowTailRun();
++          tailbyte = filechecksummer.WindowLastByte();
++          emptyrun = false;
++
+           // Update the count of skipped data
+           skippeddata += filechecksummer.Offset() - skipfrom;
+ 

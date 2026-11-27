@@ -54,3 +54,12 @@ Both modes matter: `-race` needs cgo, while production runs
   that makes a throwaway one), and that meter takes a callback upstream
   never set, so verification reported no progress. Both are fixed, through
   a new `SigScanProgress` hook.
+- `0003-duplicate-run.patch`: scanning a file for a set's blocks, a block
+  that matches only entries already found gives none and the scan moves
+  one byte on. Inside a run of one byte longer than a block (the megabytes
+  of zeros a Matroska file reserves at its start) the block one byte on is
+  the same bytes, and was hashed whole again at every offset of the run:
+  1.7 million 1 MiB MD5s, half an hour a 7 GB file, with no read
+  (par2cmdline 2.0.0 does the same). The scan now keeps the length of the
+  run the window ends with, and takes such a block for the one before it
+  without looking it up.

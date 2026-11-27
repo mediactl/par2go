@@ -20,7 +20,7 @@ td="${root}/testdata"
 gen() { (cd "${root}" && go run ./internal/testgen "$@"); }
 command -v par2 >/dev/null || { echo "make.sh needs par2 on PATH" >&2; exit 1; }
 
-rm -rf "${td}/base" "${td}"/{intact,repairable,unrepairable,renamed,volnames,unicode} "${td}/sha256.txt" "${td}/sha256-unicode.txt"
+rm -rf "${td}/base" "${td}"/{intact,repairable,unrepairable,renamed,volnames,unicode,zerorun} "${td}/sha256.txt" "${td}/sha256-unicode.txt"
 mkdir -p "${td}/base"
 gen data -seed 1 -size 8192 -o "${td}/base/a.bin"
 gen data -seed 2 -size 5000 -o "${td}/base/b.bin"
@@ -45,4 +45,12 @@ gen data -seed 3 -size 6144 -o "${td}/unicode/${u}"
 (cd "${td}/unicode" && par2 create -q -q -s1024 -c2 -n1 set.par2 "${u}")
 (cd "${td}/unicode" && sha256sum "${u}") > "${td}/sha256-unicode.txt"
 gen damage -o "${td}/unicode/${u}" -bs 1024 -first 2 -count 1
+# A file that reserves a gap of zeros, two whole blocks of them, as a
+# Matroska muxer does at a file's start; damaged elsewhere, so a verify
+# looks through the extra files it is given.
+mkdir -p "${td}/zerorun"
+gen data -seed 4 -size 8192 -o "${td}/zerorun/z.bin"
+dd if=/dev/zero of="${td}/zerorun/z.bin" bs=1024 seek=1 count=2 conv=notrunc status=none
+(cd "${td}/zerorun" && par2 create -q -q -s1024 -c2 -n1 set.par2 z.bin)
+gen damage -o "${td}/zerorun/z.bin" -bs 1024 -first 5 -count 1
 ls -R "${td}"
